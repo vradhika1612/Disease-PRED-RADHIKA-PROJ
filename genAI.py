@@ -30,6 +30,6 @@ def get_health_advice(user_input, prediction):
 
     """
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-3-flash-preview")
     response = model.generate_content(prompt)
     return response.text
