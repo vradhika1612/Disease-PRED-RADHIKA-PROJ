@@ -5,7 +5,6 @@ import pandas as pd
 import joblib
 import base64
 import os
-# from pdf2image import convert_from_path # This is not needed if you're only using download buttons
 from genAI import get_health_advice
 
 # ---------------- LOGIN SYSTEM ----------------
@@ -14,71 +13,77 @@ if "authenticated" not in st.session_state:
 
 if not st.session_state["authenticated"]:
     st.title("🔐 Login")
-
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
-
-    # Replace this with your own credentials
     if st.button("Login"):
         if email == "admin" and password == "123":
             st.session_state["authenticated"] = True
             st.rerun()
         else:
             st.error("Invalid email or password")
-
     st.stop()
 # ----------------------------------------------
-# If authenticated, proceed to the main app
 
 # Load Models
-# Using forward slashes for cross-platform compatibility
 diabetes_model = pickle.load(open(r'Models/diabetes_pred.pkl', 'rb'))
 heart_model = pickle.load(open(r'Models/heart_pred.pkl', 'rb'))
 parkinson_model = pickle.load(open(r'Models/parkinson_pred.pkl', 'rb'))
 stroke_model = joblib.load('Models/stroke_pred.joblib')
 
-# Define pages for dropdown (only main prediction pages)
 disease_pages = ["Home", "Diabetes", "Heart Disease", "Parkinson's", "Stroke"]
 
-# Sidebar Navigation
+# Initialize session state
 if "page" not in st.session_state:
     st.session_state["page"] = "Home"
 
+# nav_select must be set BEFORE the selectbox widget is created.
+# We use a pending value to queue changes, then apply before rendering.
+if "nav_select" not in st.session_state:
+    st.session_state["nav_select"] = "Home"
+
+if "pending_nav" not in st.session_state:
+    st.session_state["pending_nav"] = None
+
+# Apply any pending nav change before the widget renders
+if st.session_state["pending_nav"] is not None:
+    st.session_state["nav_select"] = st.session_state["pending_nav"]
+    st.session_state["pending_nav"] = None
+
+def on_nav_change():
+    st.session_state["page"] = st.session_state["nav_select"]
+
+# ---- Sidebar ----
 st.sidebar.title("Navigation")
 
-# Determine the initial index for the selectbox
-current_selectbox_index = 0
-if st.session_state["page"] in disease_pages:
-    current_selectbox_index = disease_pages.index(st.session_state["page"])
-
-sidebar_selection = st.sidebar.selectbox(
+st.sidebar.selectbox(
     "Choose Disease",
     disease_pages,
-    index=current_selectbox_index,
-    key="page_selector"
+    key="nav_select",
+    on_change=on_nav_change
 )
 
-if sidebar_selection != st.session_state["page"] and st.session_state["page"] in disease_pages:
-    st.session_state["page"] = sidebar_selection
-    st.rerun()
-
-# User Manual Button in sidebar
 st.sidebar.markdown("---")
 st.sidebar.title("Documentation")
 if st.sidebar.button("📖 User Manual", use_container_width=True):
     st.session_state["page"] = "User Manual"
     st.rerun()
 
-# Logout button
 st.sidebar.markdown("""<hr style="margin-top:200px; margin-bottom:10px;">""", unsafe_allow_html=True)
-logout_placeholder = st.sidebar.empty()
-with logout_placeholder:
-    if st.button("🚪 Logout", key="logout_btn"):
-        st.session_state["authenticated"] = False
-        st.rerun()
+if st.sidebar.button("🚪 Logout", key="logout_btn"):
+    st.session_state["authenticated"] = False
+    st.rerun()
 
 
-# --- Consolidated Page Content Logic ---
+# ---- Helper: navigate to a main disease page ----
+def nav_to(page):
+    """Use pending_nav to queue selectbox update before next render."""
+    st.session_state["page"] = page
+    st.session_state["pending_nav"] = page
+    st.rerun()
+
+
+# ---- Page Routing ----
+
 if st.session_state["page"] == "Home":
     st.title("Multi-Disease Prediction App")
     st.markdown("### Choose a disease to predict:")
@@ -86,27 +91,22 @@ if st.session_state["page"] == "Home":
     col1, col2 = st.columns(2)
     with col1:
         if st.button("🩺 Diabetes Prediction", use_container_width=True):
-            st.session_state["page"] = "Diabetes"
-            st.rerun()
+            nav_to("Diabetes")
     with col2:
         if st.button("❤️ Heart Disease Prediction", use_container_width=True):
-            st.session_state["page"] = "Heart Disease"
-            st.rerun()
+            nav_to("Heart Disease")
 
     col3, col4 = st.columns(2)
     with col3:
         if st.button("🧠 Parkinson's Prediction", use_container_width=True):
-            st.session_state["page"] = "Parkinson's"
-            st.rerun()
+            nav_to("Parkinson's")
     with col4:
         if st.button("🩸 Stroke Prediction", use_container_width=True):
-            st.session_state["page"] = "Stroke"
-            st.rerun()
+            nav_to("Stroke")
 
 elif st.session_state["page"] == "User Manual":
     if st.button("⬅️ Back to Home"):
-        st.session_state["page"] = "Home"
-        st.rerun()
+        nav_to("Home")
     st.title("📘 User Manual")
     st.markdown("""
     Learn how to use each disease prediction tool with clear instructions and a sample report.
@@ -148,7 +148,7 @@ elif st.session_state["page"] == "Diabetes Manual":
     8.  Click **Predict Diabetes**.
 
     ### Result Interpretation
-    - **0 = Not Diabetic** – your values don’t indicate diabetes.
+    - **0 = Not Diabetic** – your values don't indicate diabetes.
     - **1 = Diabetic** – you may have diabetes, seek medical confirmation.
 
     ### Note
@@ -159,15 +159,10 @@ elif st.session_state["page"] == "Diabetes Manual":
     ### Sample Report:
     """)
     st.image("Sample_Parameters/diabetes_parameters.png", caption="Sample Diabetes Report")
-    pdf_path = "Sample_Parameters/diabetes.pdf"
-    with open(pdf_path, "rb") as pdf_file:
-                st.download_button(
-                    label="Download Sample Diabetes Report PDF",
-                    data=pdf_file.read(),
-                    file_name="diabetes_sample_report.pdf",
-                    mime="application/pdf",
-                    help="Click to download the sample diabetes report in PDF format.")
-   
+    with open("Sample_Parameters/diabetes.pdf", "rb") as f:
+        st.download_button("Download Sample Diabetes Report PDF", f.read(),
+                           file_name="diabetes_sample_report.pdf", mime="application/pdf")
+
 elif st.session_state["page"] == "Heart Disease Manual":
     if st.button("⬅️ Back to User Manual"):
         st.session_state["page"] = "User Manual"
@@ -194,21 +189,16 @@ elif st.session_state["page"] == "Heart Disease Manual":
     - **1 = Heart Disease Present**
 
     ### Note
-    - You’ll get a medical explanation and when to consult a doctor.
+    - You'll get a medical explanation and when to consult a doctor.
     - The app predicts heart disease risk based on your inputs.
     - Always consult a healthcare professional for a proper diagnosis.
 
     ### Sample Report:
     """)
-    st.image("Sample_Parameters/heart_parameters.png", caption="Sample Diabetes Report")
-    pdf_path = "Sample_Parameters/heart.pdf"
-    with open(pdf_path, "rb") as pdf_file:
-                st.download_button(
-                    label="Download Sample Diabetes Report PDF",
-                    data=pdf_file.read(),
-                    file_name="diabetes_sample_report.pdf",
-                    mime="application/pdf",
-                    help="Click to download the sample diabetes report in PDF format.")
+    st.image("Sample_Parameters/heart_parameters.png", caption="Sample Heart Disease Report")
+    with open("Sample_Parameters/heart.pdf", "rb") as f:
+        st.download_button("Download Sample Heart Disease Report PDF", f.read(),
+                           file_name="heart_sample_report.pdf", mime="application/pdf")
 
 elif st.session_state["page"] == "Parkinson's Manual":
     if st.button("⬅️ Back to User Manual"):
@@ -216,7 +206,7 @@ elif st.session_state["page"] == "Parkinson's Manual":
         st.rerun()
     st.title("🧠 Parkinson's Prediction Manual")
     st.markdown("""
-    ### How to Use the Parkinson’s Disease Prediction Tool
+    ### How to Use the Parkinson's Disease Prediction Tool
     1.  Input the following voice signal parameters:
     -   **MDVP:Shimmer**
     -   **MDVP:Shimmer(dB)**
@@ -227,29 +217,24 @@ elif st.session_state["page"] == "Parkinson's Manual":
     -   **Spread1 and Spread2**
     -   **D2 and PPE**
 
-    2.  Click **Predict Parkinson’s Disease**.
+    2.  Click **Predict Parkinson's Disease**.
 
     ### Result Interpretation
-    - **0 = Unlikely to have Parkinson’s**
-    - **1 = Likely Parkinson’s – consult a neurologist**
+    - **0 = Unlikely to have Parkinson's**
+    - **1 = Likely Parkinson's – consult a neurologist**
 
     ### Note
     - The app offers tailored lifestyle suggestions and care tips based on your voice indicators.
-    - It predicts Parkinson’s risk based on your inputs.
+    - It predicts Parkinson's risk based on your inputs.
     - Always consult a healthcare professional for a proper diagnosis.
 
     ### Sample Report:
     """)
-    st.image("Sample_Parameters/parkinson_parameters.png", caption="Sample Diabetes Report")
-    pdf_path = "Sample_Parameters/parkinsons_symptoms_diary.pdf"
-    with open(pdf_path, "rb") as pdf_file:
-                st.download_button(
-                    label="Download Sample Diabetes Report PDF",
-                    data=pdf_file.read(),
-                    file_name="diabetes_sample_report.pdf",
-                    mime="application/pdf",
-                    help="Click to download the sample diabetes report in PDF format.")
-        
+    st.image("Sample_Parameters/parkinson_parameters.png", caption="Sample Parkinson's Report")
+    with open("Sample_Parameters/parkinsons_symptoms_diary.pdf", "rb") as f:
+        st.download_button("Download Sample Parkinson's Report PDF", f.read(),
+                           file_name="parkinsons_sample_report.pdf", mime="application/pdf")
+
 elif st.session_state["page"] == "Stroke Manual":
     if st.button("⬅️ Back to User Manual"):
         st.session_state["page"] = "User Manual"
@@ -278,25 +263,17 @@ elif st.session_state["page"] == "Stroke Manual":
 
     ### Sample Report:
     """)
-    st.image("Sample_Parameters/stroke_parameters.png", caption="Sample Diabetes Report")
-    pdf_path = "Sample_Parameters/Stroke-Risk-Assessment.pdf"
-    with open(pdf_path, "rb") as pdf_file:
-                st.download_button(
-                    label="Download Sample Diabetes Report PDF",
-                    data=pdf_file.read(),
-                    file_name="diabetes_sample_report.pdf",
-                    mime="application/pdf",
-                    help="Click to download the sample diabetes report in PDF format.")
-    
+    st.image("Sample_Parameters/stroke_parameters.png", caption="Sample Stroke Report")
+    with open("Sample_Parameters/Stroke-Risk-Assessment.pdf", "rb") as f:
+        st.download_button("Download Sample Stroke Report PDF", f.read(),
+                           file_name="stroke_sample_report.pdf", mime="application/pdf")
 
-# Diabetes Page
+# ---- Diabetes Page ----
 elif st.session_state["page"] == "Diabetes":
     if st.button("⬅️ Back to Home"):
-        st.session_state["page"] = "Home"
-        st.rerun()
+        nav_to("Home")
     st.title("Diabetes Prediction")
 
-    # Collect inputs from user
     gender = st.selectbox("Gender", ["Female", "Male"])
     age = st.number_input("Age", min_value=0)
     hypertension = st.selectbox("Hypertension", [0, 1])
@@ -306,46 +283,20 @@ elif st.session_state["page"] == "Diabetes":
     hba1c = st.number_input("HbA1c Level", min_value=0.0, format="%.5f")
     glucose = st.number_input("Blood Glucose Level", min_value=0.0, format="%.5f")
 
-    # Build input dict matching selected features
     input_data = {
         "gender_Male": 1 if gender == "Male" else 0,
-        "age": age,
-        "hypertension": hypertension,
-        "heart_disease": heart_disease,
+        "age": age, "hypertension": hypertension, "heart_disease": heart_disease,
         "smoking_history_never": 1 if smoking_history == "never" else 0,
-        "bmi": bmi,
-        "HbA1c_level": hba1c,
-        "blood_glucose_level": glucose
+        "bmi": bmi, "HbA1c_level": hba1c, "blood_glucose_level": glucose
     }
-
-    diabetes_features = [
-    "gender_Male",
-    "age",
-    "hypertension",
-    "heart_disease",
-    "smoking_history_never",
-    "bmi",
-    "HbA1c_level",
-    "blood_glucose_level"
-    ]
-
+    diabetes_features = ["gender_Male", "age", "hypertension", "heart_disease",
+                         "smoking_history_never", "bmi", "HbA1c_level", "blood_glucose_level"]
     user_input_summary = (
-        f"Gender: {gender}\n"
-        f"Age: {age}\n"
-        f"Hypertension: {hypertension}\n"
-        f"Heart Disease: {heart_disease}\n"
-        f"Smoking History: {smoking_history}\n"
-        f"BMI: {bmi}\n"
-        f"HbA1c Level: {hba1c}\n"
-        f"Blood Glucose Level: {glucose}"
-    )
+        f"Gender: {gender}\nAge: {age}\nHypertension: {hypertension}\n"
+        f"Heart Disease: {heart_disease}\nSmoking History: {smoking_history}\n"
+        f"BMI: {bmi}\nHbA1c Level: {hba1c}\nBlood Glucose Level: {glucose}")
+    input_df = pd.DataFrame([input_data])[diabetes_features]
 
-
-    # Prepare input DataFrame
-    input_df = pd.DataFrame([input_data])
-    input_df = input_df[diabetes_features]  # Ensure column order
-
-    # Predict
     if st.button("Predict Diabetes"):
         try:
             prediction = diabetes_model.predict(input_df)[0]
@@ -357,15 +308,14 @@ elif st.session_state["page"] == "Diabetes":
         except Exception as e:
             st.error(f"Prediction failed: {str(e)}")
 
-# Heart Disease Page
+# ---- Heart Disease Page ----
 elif st.session_state["page"] == "Heart Disease":
     if st.button("⬅️ Back to Home"):
-        st.session_state["page"] = "Home"
-        st.rerun()
+        nav_to("Home")
     st.title("Heart Disease Prediction")
 
     age = st.number_input("Age", format="%.5f")
-    sex = st.selectbox("Sex", [0, 1])  # 1=Male, 0=Female
+    sex = st.selectbox("Sex", [0, 1])
     cp = st.selectbox("Chest Pain Type", [0, 1, 2, 3])
     trestbps = st.number_input("Resting Blood Pressure", format="%.5f")
     chol = st.number_input("Cholesterol", format="%.5f")
@@ -379,23 +329,11 @@ elif st.session_state["page"] == "Heart Disease":
     thal = st.selectbox("Thalassemia", [1, 2, 3])
 
     user_input_summary = (
-        f"Age: {age}\n"
-        f"Sex: {sex}\n"
-        f"Chest Pain Type: {cp}\n"
-        f"Resting Blood Pressure: {trestbps}\n"
-        f"Cholesterol: {chol}\n"
-        f"Fasting Blood Sugar: {fbs}\n"
-        f"Resting ECG: {restecg}\n"
-        f"Max Heart Rate: {thalach}\n"
-        f"Exercise Induced Angina: {exang}\n"
-        f"Oldpeak: {oldpeak}\n"
-        f"Slope: {slope}\n"
-        f"CA: {ca}\n"
-        f"Thalassemia: {thal}"
-    )
-
-    input_data = [[age, sex, cp, trestbps, chol, fbs, restecg,
-                    thalach, exang, oldpeak, slope, ca, thal]]
+        f"Age: {age}\nSex: {sex}\nChest Pain Type: {cp}\nResting Blood Pressure: {trestbps}\n"
+        f"Cholesterol: {chol}\nFasting Blood Sugar: {fbs}\nResting ECG: {restecg}\n"
+        f"Max Heart Rate: {thalach}\nExercise Induced Angina: {exang}\nOldpeak: {oldpeak}\n"
+        f"Slope: {slope}\nCA: {ca}\nThalassemia: {thal}")
+    input_data = [[age, sex, cp, trestbps, chol, fbs, restecg, thalach, exang, oldpeak, slope, ca, thal]]
 
     if st.button("Predict"):
         try:
@@ -408,11 +346,10 @@ elif st.session_state["page"] == "Heart Disease":
         except Exception as e:
             st.error(f"Prediction failed: {str(e)}")
 
-# Parkinson's Page
+# ---- Parkinson's Page ----
 elif st.session_state["page"] == "Parkinson's":
     if st.button("⬅️ Back to Home"):
-        st.session_state["page"] = "Home"
-        st.rerun()
+        nav_to("Home")
     st.title("Parkinson's Disease Prediction")
 
     shimmer = st.number_input('MDVP:Shimmer', min_value=0.0, format="%.5f")
@@ -427,29 +364,19 @@ elif st.session_state["page"] == "Parkinson's":
     ppe = st.number_input('PPE (Pitch Period Entropy)', min_value=0.0, format="%.5f")
 
     user_input_summary = (
-        f"MDVP:Shimmer: {shimmer}\n"
-        f"MDVP:Shimmer(dB): {shimmer_db}\n"
-        f"Shimmer:DDA: {shimmer_dda}\n"
-        f"NHR: {nhr}\n"
-        f"RPDE: {rpde}\n"
-        f"DFA: {dfa}\n"
-        f"spread1: {spread1}\n"
-        f"spread2: {spread2}\n"
-        f"D2: {d2}\n"
-        f"PPE: {ppe}"
-    )
+        f"MDVP:Shimmer: {shimmer}\nMDVP:Shimmer(dB): {shimmer_db}\nShimmer:DDA: {shimmer_dda}\n"
+        f"NHR: {nhr}\nRPDE: {rpde}\nDFA: {dfa}\nspread1: {spread1}\nspread2: {spread2}\n"
+        f"D2: {d2}\nPPE: {ppe}")
 
-    # Prediction
-    if st.button('Predict Parkinson\'s Disease'):
+    if st.button("Predict Parkinson's Disease"):
         try:
-            input_data = np.array([[shimmer, shimmer_db, shimmer_dda, nhr, rpde, dfa, spread1, spread2, d2, ppe]])
+            input_data = np.array([[shimmer, shimmer_db, shimmer_dda, nhr, rpde, dfa,
+                                    spread1, spread2, d2, ppe]])
             prediction = parkinson_model.predict(input_data)
-
             if prediction[0] == 1:
                 st.error("The person is likely to have Parkinson's Disease.")
             else:
                 st.success("The person is unlikely to have Parkinson's Disease.")
-
             advice = get_health_advice(user_input_summary, prediction[0])
             st.markdown(f"### Prediction Result:\n**{prediction[0]}**")
             st.markdown("### Health Advice & Recommendations:")
@@ -457,11 +384,10 @@ elif st.session_state["page"] == "Parkinson's":
         except Exception as e:
             st.error(f"Prediction failed: {str(e)}")
 
-# Stroke Page
+# ---- Stroke Page ----
 elif st.session_state["page"] == "Stroke":
     if st.button("⬅️ Back to Home"):
-        st.session_state["page"] = "Home"
-        st.rerun()
+        nav_to("Home")
     st.title("Stroke Prediction")
 
     gender = st.selectbox("Gender", ["Male", "Female", "Other"])
@@ -476,43 +402,23 @@ elif st.session_state["page"] == "Stroke":
     smoking_status = st.selectbox("Smoking Status", ["never smoked", "formerly smoked", "smokes", "Unknown"])
 
     user_input_summary = (
-        f"Gender: {gender}\n"
-        f"Age: {age}\n"
-        f"Hypertension: {hypertension}\n"
-        f"Heart Disease: {heart_disease}\n"
-        f"Ever Married: {ever_married}\n"
-        f"Work Type: {work_type}\n"
-        f"Residence Type: {residence_type}\n"
-        f"Average Glucose Level: {avg_glucose_level}\n"
-        f"BMI: {bmi}\n"
-        f"Smoking Status: {smoking_status}"
-    )
+        f"Gender: {gender}\nAge: {age}\nHypertension: {hypertension}\n"
+        f"Heart Disease: {heart_disease}\nEver Married: {ever_married}\n"
+        f"Work Type: {work_type}\nResidence Type: {residence_type}\n"
+        f"Average Glucose Level: {avg_glucose_level}\nBMI: {bmi}\n"
+        f"Smoking Status: {smoking_status}")
 
-    # When predict button is clicked
     if st.button("Predict Stroke Risk"):
         try:
-            # Create a dataframe in the same order as training data
             user_input = {
-                'gender': gender,
-                'age': age,
-                'hypertension': hypertension,
-                'heart_disease': heart_disease,
-                'ever_married': ever_married,
-                'work_type': work_type,
-                'Residence_type': residence_type,
-                'avg_glucose_level': avg_glucose_level,
-                'bmi': bmi,
+                'gender': gender, 'age': age, 'hypertension': hypertension,
+                'heart_disease': heart_disease, 'ever_married': ever_married,
+                'work_type': work_type, 'Residence_type': residence_type,
+                'avg_glucose_level': avg_glucose_level, 'bmi': bmi,
                 'smoking_status': smoking_status
             }
-
-
-            # Convert to DataFrame
-            import pandas as pd
             input_df = pd.DataFrame([user_input])
-
-            # Make prediction
             prediction = stroke_model.predict(input_df)[0]
-
             st.success("🟥 High Stroke Risk" if prediction == 1 else "🟩 Low Stroke Risk")
             advice = get_health_advice(user_input_summary, prediction)
             st.markdown(f"### Prediction Result:\n**{prediction}**")
